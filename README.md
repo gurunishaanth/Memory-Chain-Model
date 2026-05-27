@@ -4,7 +4,6 @@ This is the memory chain model I am working on. *Don't work on it too much.*
 This document summarizes a memory-chain learning algorithm discussed in the conversation. The model incrementally learns patterns from non-uniform data, chains them temporally, supports anomaly detection, prediction, and data generation without flattening inputs.
 # Core Idea
 Input data is matched against stored pattern memories. The best-matching pattern is selected, updated, and temporally linked to previous patterns, forming a chain or graph of experience.
-<picture>https://github.com/gurunishaanth/Memory-Chain-Model/blob/a4179bde330c0c7f034d16822fcb5b1593280356/memory_chain_bigcircles.png</picture>
 # Pattern Matching
 For input $x_t$ and stored patterns $w_k$, activation is computed as $a_k(t) = w_k^T x_t$. The pattern index is selected using $arg max_k a_k(t)$.
 # Learning
