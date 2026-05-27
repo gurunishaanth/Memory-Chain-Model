@@ -79,16 +79,85 @@ class MemoryCell(nn.Module):
     
     def recall_pattern(self, pattern_index):
         return self.W[pattern_index]
+
+    def classify(self, dataset):
+        if not isinstance(dataset, torch.Tensor):
+            raise TypeError(f"Unsupported dataset type: {type(dataset)}")
+        if dataset.dim() == 1:
+            dataset = dataset.unsqueeze(0)
+        dataset = dataset.to(device=self.W.device, dtype=self.W.dtype)
+        with torch.no_grad():
+            a, s = self.forward(dataset)
+            confidences, _ = torch.max(a, dim=1)
+            return [
+                {
+                    'index': idx,
+                    'pattern_id': int(pattern_id.item()),
+                    'confidence': float(confidence.item()),
+                }
+                for idx, (pattern_id, confidence) in enumerate(zip(s, confidences))
+            ]
+
+    def group_dataset_by_pattern(self, dataset):
+        if not isinstance(dataset, torch.Tensor):
+            raise TypeError(f"Unsupported dataset type: {type(dataset)}")
+        if dataset.dim() == 1:
+            dataset = dataset.unsqueeze(0)
+        dataset = dataset.to(device=self.W.device, dtype=self.W.dtype)
+        with torch.no_grad():
+            _, s = self.forward(dataset)
+            s = s.tolist()
+        groups = {}
+        for idx, pattern_id in enumerate(s):
+            groups.setdefault(pattern_id, []).append(idx)
+        grouped = {}
+        for pattern_id, indices in groups.items():
+            tensor_indices = torch.tensor(indices, dtype=torch.long, device=dataset.device)
+            grouped[pattern_id] = (tensor_indices, dataset[tensor_indices])
+        return grouped
+
+    def export_temporal_chain_data(self):
+        return {
+            'num_patterns': self.num_patterns,
+            'transition_matrix': self.T[:self.num_patterns, :self.num_patterns].detach().cpu(),
+            'patterns': self.W[:self.num_patterns].detach().cpu(),
+        }
+
+    def save_temporal_chain(self, path):
+        data = self.export_temporal_chain_data()
+        torch.save(data, path)
+        return path
+
+    @classmethod
+    def load_temporal_chain(cls, path, input_size, pattern_size, learning_rate, Sim_Thr, Ano_Thr):
+        saved = torch.load(path, map_location='cpu')
+        model = cls(input_size=input_size, pattern_size=pattern_size, learning_rate=learning_rate, Sim_Thr=Sim_Thr, Ano_Thr=Ano_Thr)
+        num_patterns = int(saved.get('num_patterns', 0))
+        model.num_patterns = min(num_patterns, model.pattern_size)
+        if model.num_patterns > 0:
+            model.W[:model.num_patterns].copy_(saved['patterns'][:model.num_patterns])
+            model.T[:model.num_patterns, :model.num_patterns].copy_(saved['transition_matrix'][:model.num_patterns, :model.num_patterns])
+        return model
+
     # prediction and generation
-    def predict_next(self, pattern_index):
+    def predict_next(self, pattern_index, randomize=False, temperature=1.0):
         if isinstance(pattern_index, torch.Tensor):
             pattern_index = pattern_index.item()
         pattern_index = int(pattern_index)
         if pattern_index < 0 or pattern_index >= self.num_patterns:
             raise IndexError(f"pattern_index {pattern_index} is out of range")
-        s_next = self.T[pattern_index, :self.num_patterns]
-        p_next = torch.argmax(s_next)
-        return p_next.item()
+
+        row = self.T[pattern_index, :self.num_patterns]
+        if row.numel() == 0 or torch.all(row <= 0):
+            return pattern_index
+
+        if randomize:
+            logits = row / max(temperature, 1e-6)
+            probs = torch.softmax(logits, dim=0)
+            if torch.isfinite(probs).all() and probs.sum() > 0:
+                return torch.multinomial(probs, num_samples=1).item()
+
+        return torch.argmax(row).item()
 
     def generate(self, s):
         if isinstance(s, int):
@@ -105,11 +174,13 @@ class MemoryCell(nn.Module):
         next_data = torch.matmul(self.W[:self.num_patterns].T, s)
         return next_data
 
-    def generate_dream_sequence(self, start_pattern_index, length):
+    def generate_dream_sequence(self, start_pattern_index, length, randomize=False, temperature=1.0):
+        if self.num_patterns == 0:
+            return []
         sequence = [int(start_pattern_index)]
         current_pattern = int(start_pattern_index)
         for _ in range(length - 1):
-            next_pattern = self.predict_next(current_pattern)
+            next_pattern = self.predict_next(current_pattern, randomize=randomize, temperature=temperature)
             sequence.append(next_pattern)
             current_pattern = next_pattern
         return sequence
