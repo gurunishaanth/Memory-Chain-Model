@@ -5,13 +5,24 @@ This document summarizes a memory-chain learning algorithm discussed in the conv
 # Core Idea
 Input data is matched against stored pattern memories. The best-matching pattern is selected, updated, and temporally linked to previous patterns, forming a chain or graph of experience.
 # Pattern Matching
-For input $x_t$ and stored patterns $w_k$, activation is computed as $a_k(t) = w_k^T x_t$. The pattern index is selected using $arg max_k a_k(t)$.
+For input $x_t$ and stored patterns $w_k$,
+activation is computed as $a_k(t) = w_k^T x_t$.
+The pattern index is selected using $arg max_k a_k(t)$.
 # Learning
-Pattern memory is updated using local Hebbian learning. Temporal transitions between patterns are stored in a transition matrix T.
+Pattern memory is updated using local Hebbian learning. 
+Temporal transitions between patterns are stored in a transition matrix T.
 # Prediction
-Prediction is performed in pattern space using a linear transition: $s(t+1) = T^T s(t)$.
+Prediction is performed in pattern space using a linear transition:
+
+$s(t+1) = T^T s(t)$.
+
+
 # Generation
-Generated data is reconstructed linearly from predicted pattern activations: $x_hat = W^T s(t+1)$.
+Generated data is reconstructed linearly from predicted pattern activations:
+
+$x_hat = W^T s(t+1)$.
+
+
 # Anomaly Detection
 Anomaly detection is based on confidence, not worst match. If $max_k a_k(t) < threshold$, the input is considered anomalous.
 # Applications
