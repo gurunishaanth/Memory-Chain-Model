@@ -8,7 +8,8 @@ class MemoryCell(nn.Module):
             pattern_size: int,
             learning_rate: float,
             Sim_Thr: float,
-            Ano_Thr: float
+            Ano_Thr: float,
+            cosine: bool = False
             )-> None:
         super(MemoryCell, self).__init__()
         self.input_size = input_size
@@ -18,6 +19,7 @@ class MemoryCell(nn.Module):
         self.Sim_Thr = Sim_Thr
         self.Ano_Thr = Ano_Thr
         self.prev_k = None
+        self.cosine = cosine
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.W = nn.Parameter(torch.zeros((self.pattern_size, self.input_size), device=device))
         self.T = nn.Parameter(torch.zeros((self.pattern_size, self.pattern_size), device=device))
@@ -36,7 +38,10 @@ class MemoryCell(nn.Module):
         x = self._prepare_input(x)
         if x.dim() == 1:
             x = x.unsqueeze(0)
-        a = torch.matmul(x, self.W.T)
+        if self.cosine:
+            a = torch.matmul(nn.functional.normalize(x, dim=1), nn.functional.normalize(self.W, dim=1).T)
+        else:
+            a = torch.matmul(x, self.W.T)
         s = torch.argmax(a, dim=1)
         return a, s
 
@@ -68,6 +73,8 @@ class MemoryCell(nn.Module):
             # Memory is full: replace the least active pattern instead of crashing.
             replacement = torch.argmin(torch.norm(self.W, dim=1))
             self.W[replacement].copy_(x)
+            self.T[replacement, :] = 0
+            self.T[:, replacement] = 0
             return replacement.item()
     
     def update_pattern(self, pattern_index, x):
@@ -75,7 +82,7 @@ class MemoryCell(nn.Module):
             x = self._prepare_input(x)
             if x.dim() == 2 and x.size(0) == 1:
                 x = x.squeeze(0)
-            self.W[pattern_index].copy_(x)
+            self.W[pattern_index] += self.learning_rate * (x - self.W[pattern_index])
     
     def recall_pattern(self, pattern_index):
         return self.W[pattern_index]
@@ -135,6 +142,7 @@ class MemoryCell(nn.Module):
         num_patterns = int(saved.get('num_patterns', 0))
         model.num_patterns = min(num_patterns, model.pattern_size)
         if model.num_patterns > 0:
+          with torch.no_grad():
             model.W[:model.num_patterns].copy_(saved['patterns'][:model.num_patterns])
             model.T[:model.num_patterns, :model.num_patterns].copy_(saved['transition_matrix'][:model.num_patterns, :model.num_patterns])
         return model
@@ -206,7 +214,7 @@ class MemoryCell(nn.Module):
             self.update_pattern(k, x)
         
         if self.prev_k is not None:
-            self.Temporal_chaining(self.prev_k, k)
+            self.Temporal_chaining(k, self.prev_k)
         
         self.prev_k = k
         return k, c.item(), anomaly    
